@@ -30,7 +30,7 @@ One typical use case concerns cryptographic primitives which must be very perfor
 >
 > FFI looks like the right choice: no syscall, a foreign function call just behaves as a jump in memory and there is no extra data (de)serialization involved. The price to pay for this performance is that using the FFI requires special care to low-level calling conventions and memory management of the two involved systems. But we will come back to this topic later!
 >
-> **To go further:** you can learn more about how to use FFI in Rust by reading the [_The Rustonomicon_](https://doc.rust-lang.org/nomicon/ffi.html) (Unsafe Rust guide) dedicated section, or the dedicated [_Rust FFI Omnibus_](http://jakegoulding.com/rust-ffi-omnibus/) tutorial. The ANSSI (French government security agency) also writes about it in [_Secure Rust Guidelines_](https://anssi-fr.github.io/rust-guide/07_ffi.html) guide, and _Rust Embedded_ book has an [Interoperability with C](https://docs.rust-embedded.org/book/interoperability/rust-with-c.html) chapter. On the Haskell side, you way want to take a look at [GHC wiki](https://wiki.haskell.org/GHC/Using_the_FFI) or read the dedicated [_Real-World Haskell_](https://book.realworldhaskell.org/read/interfacing-with-c-the-ffi.html) chapter!
+> **To go further:** you can learn more about how to use FFI in Rust by reading the [_The Rustonomicon_](https://doc.rust-lang.org/nomicon/ffi.html) (Unsafe Rust guide) dedicated section, or the dedicated [_Rust FFI Omnibus_](http://jakegoulding.com/rust-ffi-omnibus/) tutorial. The ANSSI (French government security agency) also writes about it in [_Secure Rust Guidelines_](https://anssi-fr.github.io/rust-guide/07_ffi.html) guide, and _Rust Embedded_ book has an [Interoperability with C](https://docs.rust-embedded.org/book/interoperability/rust-with-c.html) chapter. On the Haskell side, you may want to take a look at [GHC wiki](https://wiki.haskell.org/GHC/Using_the_FFI) or read the dedicated [_Real-World Haskell_](https://book.realworldhaskell.org/read/interfacing-with-c-the-ffi.html) chapter!
 
 FFI is a feature that's already offered by both `rustc` (Rust compiler) and `ghc` (Haskell compiler). It allows calling a Rust function from Haskell code (and vice versa). Both programming languages define an `extern` keyword that allows users to declare a function symbol that will only be resolved at [linking](https://doc.rust-lang.org/reference/linkage.html) step. N.B. mangling of the function should also be disabled, in Rust it requires decorating functions with [`#[no_mangle]`](https://doc.rust-lang.org/reference/abi.html#the-no_mangle-attribute) attribute.
 
@@ -77,7 +77,7 @@ fn greetings(name: &str) {
 extern "C" fn __c_greetings(__0: *const core::ffi::c_char) -> () {
     // `traits` module is `hs-bindgen::hs-bindgen-traits`
     // n.b. do not forget to import it, e.g., with `use hs-bindgen::*`
-    traits::ReprC::from(greetings(traits::ReprRust::from(__0),))
+    traits::FromReprC::from(greetings(traits::FromReprRust::from(__0),))
 }
 ```
 
@@ -125,7 +125,7 @@ In Rust, [`extern`](https://doc.rust-lang.org/book/ch19-01-unsafe-rust.html#usin
 
 ## Implementation
 
-The previous code example highlighted that we rely on two constructs: an attribute procedural macro [`#[hs_bindgen]`](https://github.com/yvan-sraka/hs-bindgen), and (internally) `ReprRust` and `ReprC` traits.
+The previous code example highlighted that we rely on two constructs: an attribute procedural macro [`#[hs_bindgen]`](https://github.com/yvan-sraka/hs-bindgen), and (internally) `FromReprRust` and `FromReprC` traits.
 
 > **Why use a Rust macro?**
 >
@@ -137,11 +137,11 @@ The previous code example highlighted that we rely on two constructs: an attribu
 >
 > **To go further:** `cbindgen` has a major limitation in that it does not understand Rust's module system or namespacing. As mentioned in its [documentation](https://github.com/eqrion/cbindgen/blob/master/docs.md#writing-your-c-api), this means that if `cbindgen` sees that it needs the definition for `MyType` and there exists two things in your project with the type name `MyType`, it won't know what to do. Rather, using the framework implemented here for `hs-bindgen` would allow us to provide a better `c-bindgen` implementation.
 
-`ReprRust` and `ReprC` traits respectively ensure that the arguments and return value of exposed function respect a set of given safety rules. As a recall, Rust's traits are similar to Haskell's typeclasses: it’s a way to define a contract for a type, specifying a set of methods that the type must implement. This allows for generic programming, where a function or data structure can operate on any type that implements the given set of traits.
+`FromReprRust` and `FromReprC` traits respectively ensure that the arguments and return value of exposed function respect a set of given safety rules. As a recall, Rust's traits are similar to Haskell's typeclasses: it’s a way to define a contract for a type, specifying a set of methods that the type must implement. This allows for generic programming, where a function or data structure can operate on any type that implements the given set of traits.
 
 Wrapping user types by these traits have several benefits:
 
-* Unsupported types are nicely reported as _“the trait `ReprRust<T>` is not implemented for `U`”_ error (that suggest other types that the trait implement to the user);
+* Unsupported types are nicely reported as _“the trait `FromReprRust<T>` is not implemented for `U`”_ error (that suggest other types that the trait implement to the user);
 
 * The user can extensively always implement these traits for arbitrary types ;
 
@@ -153,9 +153,9 @@ Wrapping user types by these traits have several benefits:
 >
 > `rustc` will complain if a function prefixed by `extern` keyword use as arguments types that are not FFI-safe. FFI-safe types guarantee that a type has a [specified layout](https://doc.rust-lang.org/reference/type-layout.html) (memory representation) by e.g. having a [`#[repr(C)]`](https://doc.rust-lang.org/nomicon/other-reprs.html#reprc) compiler attribute, for the given C call convention.
 
-**To go further:** the memory management strategy is freeing the value is the role of the receiver (which has “ownership” of it). This means that values returned by Rust functions aren't [`dropped`](https://doc.rust-lang.org/std/ops/trait.Drop.html) by Rust but rather should be [`freed`](https://hackage.haskell.org/package/base/docs/Foreign-Marshal-Alloc.html) on the Haskell side!
+**To go further:** the memory management strategy is _freeing the value is the role of the receiver_ (which has “ownership” of it). This means that values returned by Rust functions aren't [`dropped`](https://doc.rust-lang.org/std/ops/trait.Drop.html) by Rust but rather should be [`freed`](https://hackage.haskell.org/package/base/docs/Foreign-Marshal-Alloc.html) on the Haskell side!
 
-**EDIT:*** Thanks to community feedbacks from Merijn Verstraaten, I just released `hs-bindgen` v0.8.0 that now generates `safe` Haskell foreign imports by default! You can still generate `unsafe` bindings simply by prefixing a function name like `#[hs_bindgen(unsafe NAME :: TYPE)]` in Rust attribute macro. I invite you to read *[“FFI safety and GC”](https://frasertweedale.github.io/blog-fp/posts/2022-09-23-ffi-safety-and-gc.html)* by Fraser Tweedale or GHC's users guide to understand the differences between Haskell `unsafe`/`safe` keywords.
+**EDIT:** Thanks to community feedbacks from Merijn Verstraaten, I just released `hs-bindgen` v0.8.0 that now generates `safe` Haskell foreign imports by default! You can still generate `unsafe` bindings simply by prefixing a function name like `#[hs_bindgen(unsafe NAME :: TYPE)]` in Rust attribute macro. I invite you to read *[“FFI safety and GC”](https://frasertweedale.github.io/blog-fp/posts/2022-09-23-ffi-safety-and-gc.html)* by Fraser Tweedale or GHC's users guide to understand the differences between Haskell `unsafe`/`safe` keywords.
 
 ## DevX
 
@@ -167,13 +167,13 @@ What `cargo-cabal` actually does is:
 
 * Ask the user to add `crate-type = ["staticlib"]` (or `"cdylib"`, dynamic libraries require an extra [`build.rs`](https://github.com/yvan-sraka/cargo-cabal/blob/main/src/build.rs) file that is generated by `cargo-cabal`) to their `Cargo.toml` file;
 
-* Generate a custom `X.cabal` linking `rustc` output as `extra-librairies`, and either a ([`naersk`](https://github.com/nix-community/naersk) and [`haskell.nix`](https://github.com/input-output-hk/haskell.nix) based) `flake.nix` or a [`Setup.lhs`](https://github.com/yvan-sraka/cargo-cabal/blob/main/src/Setup.lhs) Cabal build script (to work around this [issue](https://github.com/haskell/cabal/issues/2641)).
+* Generate a custom `X.cabal` linking `rustc` output as `extra-libraries`, and either a ([`naersk`](https://github.com/nix-community/naersk) and [`haskell.nix`](https://github.com/input-output-hk/haskell.nix) based) `flake.nix` or a [`Setup.lhs`](https://github.com/yvan-sraka/cargo-cabal/blob/main/src/Setup.lhs) Cabal build script (to work around this [issue](https://github.com/haskell/cabal/issues/2641)).
 
 **To go further:** `stack` isn't supported yet, but we could easily imagine a `cargo-stack` binary that just wraps a `cargo-cabal --stack` CLI option!
 
 ## What's next?
 
-[`cargo-cabal`](https://github.com/yvan-sraka/cargo-cabal) and [`hs-bindgen`](https://github.com/yvan-sraka/hs-bindgen) combined are less than 1000 LoC, they also support Rust `#[no_std]` code, and I would be glad to keep them as [KISS](https://en.wikipedia.org/wiki/KISS_principle) and modular as possible. But there is still room for improvements, e.g., by adding trait implementations for more Rust `std` types, or possibly supporting `async` functions with [`async-ffi`](https://github.com/oxalica/async-ffi)?!
+[`cargo-cabal`](https://github.com/yvan-sraka/cargo-cabal) and [`hs-bindgen`](https://github.com/yvan-sraka/hs-bindgen) combined are less than 1000 LOC, they also support Rust `#[no_std]` code, and I would be glad to keep them as [KISS](https://en.wikipedia.org/wiki/KISS_principle) and modular as possible. But there is still room for improvements, e.g., by adding trait implementations for more Rust `std` types, or possibly supporting `async` functions with [`async-ffi`](https://github.com/oxalica/async-ffi)?!
 
 Furthermore, It’s also nice to give a sneak peek on what others do for comparison: **OCaml** [allows extensions to be written directly in Rust with no C stubs](https://docs.rs/ocaml), this work was supported from the [OCaml Software Foundation](http://ocaml-sf.org/) and you can find [a basic example project here](http://github.com/zshipko/ocaml-rust-starter). It offers [safe OCaml/Rust interoperability](https://github.com/simplestaking/ocaml-interop), meaning utilities to convert ADTs (Algebraic Data Types) and functions using them.
 
